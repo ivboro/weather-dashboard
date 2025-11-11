@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mountain‑style Weather Dashboard · Open‑Meteo</title>
+  <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
+  <link rel="preconnect" href="https://geocoding-api.open-meteo.com" crossorigin>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#0f1530; --muted:#8fa2d6; --text:#eaf0ff; --grid:#223161; --accent:#7aa2ff;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif; background:#0b1020; color:var(--text)}
+    header{padding:18px 14px; display:flex; gap:10px; align-items:center; justify-content:space-between; border-bottom:1px solid #1a244d; background:linear-gradient(180deg,#0f1634, #0b1020)}
+    .title{font-weight:800; letter-spacing:.3px}
+    .title span{opacity:.7; font-weight:500}
+    .bar{display:flex; gap:8px; flex-wrap:wrap}
+    input[type="text"]{padding:12px 14px; border-radius:10px; border:1px solid #1c274d; background:#0e1530; color:var(--text); min-width:260px; outline:none}
+    button{padding:12px 14px; border-radius:10px; border:1px solid #223161; background:#182248; color:var(--text); cursor:pointer; font-weight:600}
+    button:hover{filter:brightness(1.1)}
+
+    main{max-width:1200px; margin:18px auto 32px; padding:0 14px}
+    .hint{color:var(--muted); font-size:.9rem}
+
+    .panel{background:var(--panel); border:1px solid #1c274d; border-radius:14px; overflow:hidden}
+
+    /* Dashboard table */
+    .dash{width:100%; overflow:auto}
+    .dash-inner{min-width:980px}
+    .grid{display:grid; grid-auto-flow:column; grid-auto-columns:minmax(200px,1fr);}
+    .col{border-left:1px solid var(--grid)}
+    .col:first-child{border-left:none}
+    .head{display:grid; grid-template-rows:auto auto; gap:6px; padding:10px; background:#0e1538; border-bottom:1px solid var(--grid)}
+    .dayline{display:flex; align-items:center; justify-content:space-between; gap:8px}
+    .day{font-weight:800}
+    .icons{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+    .ic{background:#0f183c; border:1px solid #223161; border-radius:10px; padding:6px 4px; text-align:center; font-size:.88rem}
+    .ic span{display:block; font-size:1.1rem; margin-bottom:2px}
+    .badge{display:inline-block; margin-top:2px; padding:2px 6px; border:1px solid #2a3a72; border-radius:999px; font-size:.72rem; color:#cfe4ff}
+
+    .rows{display:grid; grid-template-rows:repeat(7,auto)}
+    .cell{padding:8px; text-align:center; border-bottom:1px solid var(--grid)}
+    .metric{font-weight:800}
+    .lab{color:var(--muted); font-size:.8rem}
+    .tempBand{display:flex; gap:6px; justify-content:center}
+    .pill{padding:6px 8px; border:1px solid #223161; border-radius:10px; min-width:40px}
+    .tmax{background:#173a28}
+    .tmin{background:#0e283e}
+
+    .topbar{display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid var(--grid)}
+    .city{font-size:1.1rem; font-weight:700}
+    .right{color:var(--muted); font-size:.9rem}
+
+    .loader{display:none; gap:10px; align-items:center; padding:8px 0}
+    .loader.show{display:flex}
+    .dot{width:8px; height:8px; border-radius:50%; background:var(--accent); animation:b 1.2s infinite}
+    .dot:nth-child(2){animation-delay:.15s}
+    .dot:nth-child(3){animation-delay:.3s}
+    @keyframes b{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+
+    .select-wrap{position:relative}
+    .select{position:absolute; left:0; right:0; top:48px; z-index:10; background:#0e1530; border:1px solid #223161; border-radius:12px; overflow:hidden; display:none}
+    .select.show{display:block}
+    .opt{padding:10px 12px; cursor:pointer; border-bottom:1px solid #182248}
+    .opt:last-child{border-bottom:none}
+    .opt:hover{background:#14204a}
+
+    footer{max-width:1200px; margin:8px auto 28px; padding:0 14px; color:var(--muted); font-size:.9rem}
+    a{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Weather Dashboard <span>· Open‑Meteo</span></div>
+    <div class="bar select-wrap">
+      <input id="q" type="text" placeholder="Search city (e.g., Tel Aviv, Beer Sheva)" />
+      <button id="searchBtn">Search</button>
+      <button id="geoBtn">Use my location</button>
+      <div id="select" class="select" role="listbox" aria-label="Pick a place"></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="topbar">
+        <div class="city" id="city">—</div>
+        <div class="right"><span id="coords"> </span> • <span id="tz"> </span> • Updated <span id="updated">—</span></div>
+      </div>
+      <div class="loader" id="loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span class="muted">Loading…</span></div>
+      <div class="dash" id="dash"><div class="dash-inner grid" id="grid"></div></div>
+    </div>
+
+    <p class="hint" style="margin-top:10px">API by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open‑Meteo</a> (no key). Open‑Meteo provides up to <b>16 days</b> of forecast; this UI shows as many as available. Snow metrics use <b>cm</b>.</p>
+  </main>
+
+  <footer>
+    Tip: type a city then choose from the dropdown, or click “Use my location”.
+  </footer>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    const q = $("q"), searchBtn=$("searchBtn"), geoBtn=$("geoBtn"), selectEl=$("select"), loader=$("loader");
+    const cityEl=$("city"), coordsEl=$("coords"), tzEl=$("tz"), updatedEl=$("updated"), gridEl=$("grid");
+
+    function showLoader(show){ loader.classList.toggle('show', !!show); }
+
+    async function geocode(name){
+      const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+      url.search = new URLSearchParams({ name, count: 8, language: 'en', format: 'json' }).toString();
+      const r = await fetch(url, {headers:{'Accept':'application/json'}});
+      if(!r.ok) throw new Error('Geocoding failed');
+      const data = await r.json();
+      return data.results || [];
+    }
+
+    function showOptions(list){
+      selectEl.innerHTML = '';
+      if(!list.length){ selectEl.classList.remove('show'); return; }
+      list.forEach(item => {
+        const d = document.createElement('div');
+        d.className = 'opt';
+        const admin = [item.admin1, item.admin2, item.country].filter(Boolean).join(', ');
+        d.textContent = `${item.name}${admin? ' — '+admin:''}`;
+        d.onclick = () => { selectEl.classList.remove('show'); loadByCoords(item); };
+        selectEl.appendChild(d);
+      });
+      selectEl.classList.add('show');
+    }
+
+    async function loadByCoords(place){
+      showLoader(true);
+      try{
+        const lat = place.latitude ?? place.lat ?? place[0];
+        const lon = place.longitude ?? place.lon ?? place[1];
+        const displayName = place.name ? `${place.name}${place.country ? ', '+place.country:''}` : `Lat ${lat.toFixed(3)}, Lon ${lon.toFixed(3)}`;
+
+        const url = new URL('https://api.open-meteo.com/v1/forecast');
+        url.search = new URLSearchParams({
+          latitude: lat, longitude: lon, timezone: 'auto',
+          current_weather: 'true',
+          forecast_days: '16',
+          hourly: [
+            'temperature_2m','weathercode','precipitation_probability','windspeed_10m','snowfall'
+          ].join(','),
+          daily: [
+            'weathercode','temperature_2m_max','temperature_2m_min','precipitation_sum','snowfall_sum','windspeed_10m_max','sunrise','sunset'
+          ].join(',')
+        }).toString();
+
+        const r = await fetch(url);
+        if(!r.ok) throw new Error('Forecast fetch failed');
+        const data = await r.json();
+        render(displayName, lat, lon, data);
+      }catch(err){
+        console.error(err);
+        alert('Sorry, failed to load weather. Try another place or check your connection.');
+      }finally{
+        showLoader(false);
+      }
+    }
+
+    function render(name, lat, lon, data){
+      cityEl.textContent = name;
+      coordsEl.textContent = `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+      tzEl.textContent = data.timezone || 'local';
+      updatedEl.textContent = new Date().toLocaleString([], {hour:'2-digit', minute:'2-digit'});
+
+      const daily = data.daily || {};
+      const hourly = data.hourly || {};
+      const n = Math.min((daily.time||[]).length, 20);
+
+      gridEl.innerHTML = '';
+      for(let i=0;i<n;i++){
+        const col = document.createElement('div');
+        col.className = 'col';
+
+        const dayDate = new Date(daily.time[i]);
+        const dayName = dayDate.toLocaleDateString([], {weekday:'long'});
+        const dayNum  = dayDate.toLocaleDateString([], {month:'short', day:'2-digit'});
+
+        const head = document.createElement('div');
+        head.className = 'head';
+        head.innerHTML = `
+          <div class="dayline">
+            <div class="day">${dayName} <span class="date" style="color:var(--muted); font-weight:600">${dayNum}</span></div>
+          </div>
+          <div class="icons">
+            ${iconBlock(getPhaseCode(hourly, daily.time[i], 6, 11), 'AM',   sumSnow(hourly, daily.time[i], 6, 11))}
+            ${iconBlock(getPhaseCode(hourly, daily.time[i], 12, 17), 'PM',  sumSnow(hourly, daily.time[i], 12, 17))}
+            ${iconBlock(getPhaseCode(hourly, daily.time[i], 18, 23), 'Night', sumSnow(hourly, daily.time[i], 18, 23))}
+          </div>`;
+
+        const rows = document.createElement('div');
+        rows.className = 'rows';
+
+        // High / Low
+        rows.appendChild(rowHTML(`<div class="tempBand">
+          <div class="pill tmax"><span class="metric">${fmt(daily.temperature_2m_max?.[i],'°')}</span><div class="lab">max</div></div>
+          <div class="pill tmin"><span class="metric">${fmt(daily.temperature_2m_min?.[i],'°')}</span><div class="lab">min</div></div>
+        </div>`));
+
+        // Precip / Snow / Wind / Sun
+        rows.appendChild(rowKV('Precip', daily.precipitation_sum?.[i]!=null ? daily.precipitation_sum[i].toFixed(1)+' mm' : '—'));
+        rows.appendChild(rowKV('Snow', daily.snowfall_sum?.[i]!=null ? daily.snowfall_sum[i].toFixed(1)+' cm' : '—'));
+        rows.appendChild(rowKV('Wind', daily.windspeed_10m_max?.[i]!=null ? Math.round(daily.windspeed_10m_max[i])+' km/h' : '—'));
+        rows.appendChild(rowKV('Sunrise', daily.sunrise?.[i] ? timeOnly(daily.sunrise[i]) : '—'));
+        rows.appendChild(rowKV('Sunset', daily.sunset?.[i] ? timeOnly(daily.sunset[i]) : '—'));
+        rows.appendChild(rowKV('Day code', daily.weathercode?.[i]!=null ? codeToText(daily.weathercode[i]) : '—'));
+
+        col.appendChild(head);
+        col.appendChild(rows);
+        gridEl.appendChild(col);
+      }
+    }
+
+    function rowHTML(html){ const d=document.createElement('div'); d.className='cell'; d.innerHTML=html; return d; }
+    function rowKV(label,val){ return rowHTML(`<div class="metric">${val}</div><div class="lab">${label}</div>`); }
+    function fmt(n, su=""){ return n==null?"—":`${Math.round(n)}${su}` }
+    function timeOnly(s){ try{ return new Date(s).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }catch{return '—'} }
+
+    function iconBlock(code, label, snowCm){
+      const [emoji, text] = code!=null? codeToIcon(code): ['·','—'];
+      const snowLabel = (snowCm && snowCm>0.05) ? `<div class="badge">❄️ ${snowCm.toFixed(1)} cm</div>` : '<div class="badge" style="opacity:.55">❄️ 0 cm</div>';
+      return `<div class="ic"><span>${emoji}</span>${text}${snowLabel}<div class="lab" style="margin-top:2px">${label}</div></div>`;
+    }
+
+    function getPhaseCode(hourly, dayISO, hStart, hEnd){
+      const times = hourly.time || []; const codes = hourly.weathercode || [];
+      if(!times.length || !codes.length) return null;
+      const target = new Date(dayISO).toISOString().slice(0,10);
+      const idx = [];
+      for(let i=0;i<times.length;i++){
+        const d = new Date(times[i]);
+        const ds = d.toISOString().slice(0,10);
+        if(ds===target){ const hr = d.getHours(); if(hr>=hStart && hr<=hEnd) idx.push(i); }
+      }
+      if(!idx.length) return null;
+      const freq = new Map();
+      idx.forEach(i=>{ const c=codes[i]; freq.set(c, (freq.get(c)||0)+1); });
+      let best=null, bestN=-1; freq.forEach((n,c)=>{ if(n>bestN){bestN=n; best=c;} });
+      return best;
+    }
+
+    function sumSnow(hourly, dayISO, hStart, hEnd){
+      const times = hourly.time || []; const snow = hourly.snowfall || [];
+      if(!times.length || !snow.length) return 0;
+      const target = new Date(dayISO).toISOString().slice(0,10);
+      let total = 0;
+      for(let i=0;i<times.length;i++){
+        const d = new Date(times[i]);
+        const ds = d.toISOString().slice(0,10);
+        if(ds===target){ const hr=d.getHours(); if(hr>=hStart && hr<=hEnd){ total += (snow[i]||0); } }
+      }
+      return total; // cm
+    }
+
+    function codeToIcon(code){
+      const map = {
+        0:['☀️','clear'], 1:['🌤️','mainly clear'], 2:['⛅','some clouds'], 3:['☁️','overcast'],
+        45:['🌫️','fog'], 48:['🌫️','rime fog'],
+        51:['🌦️','drizzle'], 53:['🌦️','drizzle'], 55:['🌧️','drizzle'],
+        61:['🌦️','rain'], 63:['🌧️','rain'], 65:['🌧️','heavy rain'],
+        66:['🌧️','frz rain'], 67:['🌧️','frz rain'],
+        71:['🌨️','snow'], 73:['🌨️','snow'], 75:['❄️','heavy snow'],
+        77:['❄️','snow grains'], 80:['🌦️','shower'], 81:['🌧️','shower'], 82:['⛈️','violent'],
+        85:['🌨️','snow shwr'], 86:['❄️','heavy shwr'], 95:['⛈️','tstorm'], 96:['⛈️','hail'], 99:['⛈️','hail']
+      };
+      return map[code] || ['❓', `code ${code}`];
+    }
+
+    function codeToText(code){
+      const map = {
+        0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
+        45:'Fog', 48:'Depositing rime fog',
+        51:'Light drizzle', 53:'Moderate drizzle', 55:'Dense drizzle',
+        61:'Slight rain', 63:'Moderate rain', 65:'Heavy rain',
+        66:'Freezing rain (slight)', 67:'Freezing rain (heavy)',
+        71:'Slight snow fall', 73:'Moderate snow fall', 75:'Heavy snow fall',
+        77:'Snow grains', 80:'Rain showers (slight)', 81:'Rain showers (moderate)', 82:'Rain showers (violent)',
+        85:'Snow showers (slight)', 86:'Snow showers (heavy)', 95:'Thunderstorm', 96:'Thunderstorm with slight hail', 99:'Thunderstorm with heavy hail'
+      };
+      return map[code] || `Code ${code}`;
+    }
+
+    // Events
+    searchBtn.addEventListener('click', async ()=>{
+      const name = q.value.trim();
+      if(!name) return;
+      try{
+        const results = await geocode(name);
+        if(results.length === 1){ loadByCoords(results[0]); }
+        else if(results.length > 1){ showOptions(results); }
+        else { alert('No places found. Try a different spelling.'); }
+      }catch(e){ console.error(e); alert('Geocoding error.'); }
+    });
+
+    q.addEventListener('keydown', (e)=>{ if(e.key==='Enter') searchBtn.click(); });
+    document.addEventListener('click', (e)=>{ if(!selectEl.contains(e.target) && e.target!==q){ selectEl.classList.remove('show'); }});
+
+    geoBtn.addEventListener('click', ()=>{
+      if(!navigator.geolocation){ alert('Geolocation not supported in this browser.'); return; }
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const {latitude, longitude} = pos.coords;
+        loadByCoords({latitude, longitude});
+      }, err=>{
+        alert('Could not get your location. You can type a city instead.');
+      }, { enableHighAccuracy:true, timeout:10000 });
+    });
+
+    // Initial demo (Holon)
+    (async function init(){
+      try{
+        const results = await geocode('Holon');
+        if(results && results[0]) loadByCoords(results[0]);
+      }catch{}
+    })();
+  </script>
+</body>
+</html>
